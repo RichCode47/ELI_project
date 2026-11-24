@@ -1,0 +1,177 @@
+generator client {
+  provider = "prisma-client"
+  moduleFormat = "esm"
+  importFileExtension = "js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  PRINCIPAL
+  REGISTRAR
+  ACCOUNTANT
+  TEACHER
+  STUDENT
+  GUARDIAN
+  LIBRARIAN
+}
+
+enum Plan {
+  BASIC
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+enum BillingInterval {
+  MONTHLY
+  ANNUAL
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  EXPIRED
+  SUSPENDED
+}
+
+model Institution {
+  id        String       @id @default(uuid()) @db.Uuid
+  slug      String       @unique
+  name      String
+  type      String
+  currency  String       @default("ZMW")
+  timeZone  String       @default("Africa/Lusaka")
+  brand     String       @default("#4f46e5")
+  whiteLabel Boolean     @default(false)
+  createdAt DateTime     @default(now())
+  members   Membership[]
+  records   Record[]
+  audit     AuditEvent[]
+  subscription Subscription?
+  invites   Invitation[]
+}
+
+model Subscription {
+  tenantId      String             @id @db.Uuid
+  institution   Institution        @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  plan          Plan
+  interval      BillingInterval
+  status        SubscriptionStatus
+  endsAt        DateTime
+  onboardingFeeMinor Int           @default(0)
+  currency      String             @default("ZMW")
+  updatedAt     DateTime           @updatedAt
+}
+
+model User {
+  id           String       @id @default(uuid()) @db.Uuid
+  email        String       @unique
+  name         String
+  passwordHash String
+  // PostgreSQL supplies this value. The runtime role cannot insert or update it.
+  platformAdmin Boolean    @default(dbgenerated("false"))
+  memberships  Membership[]
+  sessions     Session[]
+  createdAt    DateTime     @default(now())
+}
+
+model Membership {
+  id        String      @id @default(uuid()) @db.Uuid
+  tenantId  String      @db.Uuid
+  userId    String      @db.Uuid
+  role      Role
+  active    Boolean     @default(true)
+  tenant    Institution @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  user      User        @relation(fields: [userId], references: [id], onDelete: Restrict)
+  profiles  Record[]
+  createdAt DateTime    @default(now())
+
+  @@unique([tenantId, userId])
+  @@unique([tenantId, id])
+}
+
+model Session {
+  tokenHash String   @id
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenantId  String?  @db.Uuid
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+  @@index([userId])
+}
+
+model Invitation {
+  tokenHash String      @id
+  tenantId  String      @db.Uuid
+  tenant    Institution @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  email     String
+  role      Role
+  expiresAt DateTime
+  acceptedAt DateTime?
+  revokedAt  DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([tenantId, email])
+}
+
+model Record {
+  id        String      @id @default(uuid()) @db.Uuid
+  tenantId  String      @db.Uuid
+  tenant    Institution @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  kind      String
+  title     String
+  status    String
+  data      Json
+  key       String?
+  memberId  String?     @db.Uuid
+  member    Membership? @relation(fields: [tenantId, memberId], references: [tenantId, id], onDelete: Restrict)
+  links     RecordLink[] @relation("source")
+  referencedBy RecordLink[] @relation("target")
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  version   Int         @default(1)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, kind, key])
+  @@index([tenantId, kind, createdAt, id])
+  @@index([tenantId, memberId, kind])
+}
+
+model RecordLink {
+  tenantId String @db.Uuid
+  sourceId String @db.Uuid
+  targetId String @db.Uuid
+  purpose  String
+  source   Record @relation("source", fields: [tenantId, sourceId], references: [tenantId, id], onDelete: Cascade)
+  target   Record @relation("target", fields: [tenantId, targetId], references: [tenantId, id], onDelete: Restrict)
+
+  @@id([tenantId, sourceId, purpose])
+  @@index([tenantId, targetId, purpose])
+}
+
+model AuditEvent {
+  id        String       @id @default(uuid()) @db.Uuid
+  tenantId  String?      @db.Uuid
+  tenant    Institution? @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  actorId   String?      @db.Uuid
+  action    String
+  kind      String?
+  targetId  String?      @db.Uuid
+  createdAt DateTime     @default(now())
+
+  @@index([tenantId, createdAt, id])
+}
+
+model RateBucket {
+  key     String   @id
+  hits    Int
+  resetAt DateTime
+
+  @@index([resetAt])
+}

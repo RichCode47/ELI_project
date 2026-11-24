@@ -1,0 +1,52 @@
+name: Release
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verification:
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/ci.yml
+
+  image:
+    needs: verification
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.tags.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: tags
+        name: Set image tag
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+      - name: Sign in to the container registry
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$REGISTRY_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: Publish the tested revision
+        env:
+          IMAGE: ${{ steps.tags.outputs.image }}
+        run: |
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+
+  deployment:
+    if: vars.DEPLOY_ENABLED == 'true'
+    needs: image
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Deploy the approved container
+        env:
+          DEPLOY_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
+          IMAGE: ${{ needs.image.outputs.image }}
+        run: |
+          [[ "$DEPLOY_URL" == https://* ]]
+          curl --fail --silent --show-error --output /dev/null \
+            --max-time 30 -H 'Content-Type: application/json' \
+            --data "$(jq -cn --arg image "$IMAGE" '{image: $image}')" "$DEPLOY_URL"
