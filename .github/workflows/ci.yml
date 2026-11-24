@@ -45,6 +45,7 @@ jobs:
           psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 -v runtime_role=eli_app -f scripts/database-grants.sql
           npm run db:deploy
           npm run db:status
+          npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code
       - run: npm test
       - run: npm run build
       - run: npx playwright install --with-deps chromium

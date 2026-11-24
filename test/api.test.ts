@@ -66,6 +66,10 @@ test('PostgreSQL, API, role/record isolation and transactional workflows', { ski
   await t.test('migrations enable forced policies with a restricted runtime identity', async () => {
     await checkDatabase(db);
     assert.equal(await db.record.count(), 0);
+    const [grants] = await db.$queryRaw<{ insert: boolean; update: boolean }[]>`
+      SELECT has_column_privilege(current_user, 'public."User"', 'platformAdmin', 'INSERT') AS insert,
+        has_column_privilege(current_user, 'public."User"', 'platformAdmin', 'UPDATE') AS update`;
+    assert.deepEqual(grants, { insert: false, update: false });
     if (ownerUrl) {
       const owner = database(ownerUrl);
       try { await assert.rejects(checkDatabase(owner)); }

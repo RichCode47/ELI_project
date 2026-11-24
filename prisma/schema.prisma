@@ -72,8 +72,7 @@ model User {
   email        String       @unique
   name         String
   passwordHash String
-  // PostgreSQL supplies this value. The runtime role cannot insert or update it.
-  platformAdmin Boolean    @default(dbgenerated("false"))
+  platformAdmin Boolean    @default(false)
   memberships  Membership[]
   sessions     Session[]
   createdAt    DateTime     @default(now())

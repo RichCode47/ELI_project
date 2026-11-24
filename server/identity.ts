@@ -1,8 +1,10 @@
+import { randomUUID } from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
 import { currencies, institutionTypes, modules, roles } from '../shared/catalog.js';
 import type { PrismaClient } from '../generated/prisma/client.js';
 import { inContext } from './db.js';
+import type { Transaction } from './db.js';
 import { session, tenantAccess, tenantAdmin, platformAdmin, requireModule } from './access.js';
 import {
   HttpError, deny, clearSession, day, digest, email, hashPassword, missing, name, password,
@@ -34,6 +36,14 @@ const subscribe = z.object({
 const institutionFields = { id: true, name: true, slug: true, type: true, currency: true, timeZone: true, brand: true, whiteLabel: true } as const;
 const badLogin = () => new HttpError(401, 'INVALID_LOGIN', 'The workspace, email or password is incorrect.');
 
+async function createAccount(tx: Transaction, emailAddress: string, fullName: string, passwordHash: string) {
+  // Let PostgreSQL assign the default for platformAdmin. The runtime role has no write access to that column.
+  const [account] = await tx.$queryRaw<{ id: string }[]>`
+    INSERT INTO "User" ("id", "email", "name", "passwordHash")
+    VALUES (${randomUUID()}::uuid, ${emailAddress}, ${fullName}, ${passwordHash}) RETURNING id`;
+  return account;
+}
+
 export function identityRoutes(db: PrismaClient, config: Config) {
   const router = Router();
   async function openSession(userId: string, tenantId: string | null, previous: string | null) {
@@ -51,7 +61,7 @@ export function identityRoutes(db: PrismaClient, config: Config) {
     if (old && !await verifyPassword(body.password, old.passwordHash)) throw badLogin();
     const passwordHash = old ? old.passwordHash : await hashPassword(body.password);
     const tenant = await db.$transaction(async (tx) => {
-      const user = old ?? await tx.user.create({ data: { email: body.email, name: body.name, passwordHash } });
+      const user = old ?? await createAccount(tx, body.email, body.name, passwordHash);
       const institution = await tx.institution.create({
         data: { name: body.institution, slug: body.slug, type: body.type },
         select: institutionFields,
@@ -92,7 +102,7 @@ export function identityRoutes(db: PrismaClient, config: Config) {
       if (!invite || invite.acceptedAt || invite.revokedAt || invite.expiresAt < new Date()) missing();
       const existing = await tx.user.findUnique({ where: { email: invite.email } });
       if (existing && !await verifyPassword(body.password, existing.passwordHash)) throw badLogin();
-      const user = existing ?? await tx.user.create({ data: { email: invite.email, name: body.name, passwordHash: await hashPassword(body.password) } });
+      const user = existing ?? await createAccount(tx, invite.email, body.name, await hashPassword(body.password));
       const consumed = await tx.invitation.updateMany({
         where: { tokenHash, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() } }, data: { acceptedAt: new Date() },
       });
