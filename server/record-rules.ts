@@ -1,3 +1,4 @@
+import { randomInt } from 'node:crypto';
 import { z } from 'zod';
 import { modules } from '../shared/catalog.js';
 import type { Module } from '../shared/catalog.js';
@@ -104,6 +105,29 @@ function priced(data: Record<string, string>, key: string, currency: string) {
   const amount = toMinor(data[key], currency);
   if (amount === null) invalid('Enter a positive amount with the correct decimal places for ' + currency + '.');
   return amount;
+}
+
+async function resolveStudentNumber(tx: Transaction, tenantId: string, requested?: string, previous?: Entry) {
+  // Student creation, edits and enrolment hold the same tenant transaction lock.
+  const findNumber = (number: string) => tx.record.findUnique({
+    where: { tenantId_kind_key: { tenantId, kind: 'students', key: JSON.stringify([number.toLowerCase()]) } },
+    select: { id: true },
+  });
+  if (requested) {
+    const match = await findNumber(requested);
+    if (match && match.id !== previous?.id) {
+      throw new HttpError(409, 'STUDENT_NUMBER_IN_USE', 'This student number is already in use at your institution.');
+    }
+    return requested;
+  }
+
+  const existing = previous && contents(previous).number;
+  if (typeof existing === 'string' && existing) return existing;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const generated = 'STU-' + randomInt(0, 10_000_000_000).toString().padStart(10, '0');
+    if (!await findNumber(generated)) return generated;
+  }
+  throw new HttpError(503, 'STUDENT_NUMBER_UNAVAILABLE', 'A student number could not be generated. Please try again.');
 }
 
 export async function validatedRecord(tx: Transaction, context: TenantAccess, kind: string, body: RecordBody, previous?: Entry) {
@@ -234,6 +258,7 @@ export async function validatedRecord(tx: Transaction, context: TenantAccess, ki
     }
     Object.assign(data, { currency, amountMinor, ...(kind === 'invoices' ? { paidMinor: 0 } : {}) });
   }
+  if (kind === 'students') data.number = await resolveStudentNumber(tx, tenantId, data.number, previous);
   const key = module.key?.map((part) => {
     if (part === '@member') return memberId;
     if (part.startsWith('@')) return related[part.slice(1)]?.id;

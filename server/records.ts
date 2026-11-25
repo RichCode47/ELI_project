@@ -152,7 +152,7 @@ export function recordRoutes(db: PrismaClient, config: Config) {
   });
 
   router.post('/institutions/:tenantId/admissions/:id/enrol', async (req, res) => {
-    const body = z.object({ classId: uuid, termId: uuid, studentNumber: z.string().trim().min(1).max(80), startDate: z.iso.date() }).strict().parse(req.body);
+    const body = z.object({ classId: uuid, termId: uuid, studentNumber: z.string().trim().max(254).optional(), startDate: z.iso.date() }).strict().parse(req.body);
     const items = await run(req, async (tx, context) => {
       requireModule(context, moduleFor('admissions'), 'write');
       const tenantId = context.tenant.id;
@@ -161,7 +161,7 @@ export function recordRoutes(db: PrismaClient, config: Config) {
       if (application.status !== 'ACCEPTED') invalid('Only an accepted application can be enrolled.');
       const contact = contents(application).email;
       const student = await createRecord(tx, context, 'students', {
-        title: application.title, status: 'ACTIVE', data: { number: body.studentNumber, ...(contact ? { email: String(contact) } : {}) }, links: {},
+        title: application.title, status: 'ACTIVE', data: { ...(body.studentNumber ? { number: body.studentNumber } : {}), ...(contact ? { email: String(contact) } : {}) }, links: {},
       });
       const enrolment = await createRecord(tx, context, 'enrolments', {
         title: application.title, status: 'ACTIVE', data: { startDate: body.startDate },

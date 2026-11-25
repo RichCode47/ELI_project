@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import type { FormEvent } from 'react';
 import { ArrowLeft, ArrowRight, ChevronRight, Download, Plus, Printer, Search, Trash2 } from 'lucide-react';
 import { formatState, modules, reportingRoles } from '../shared/catalog.js';
@@ -28,6 +28,16 @@ export function Relationship({ label, name, path, selected, required, members }:
       onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); setQuery(search); } }}/>
       <button type="button" className="button subtle" onClick={() => setQuery(search)}><Search size={15}/> Find</button></div>
     {error && <ErrorMessage error={error}/>}
+  </div>;
+}
+
+function StudentNumberField({ name, existing }: { name: string; existing?: string | number }) {
+  const hintId = useId();
+  const generating = existing === undefined;
+  return <div>
+    <Field label="Student number"><input name={name} defaultValue={existing} maxLength={254}
+      required={!generating} aria-describedby={generating ? hintId : undefined}/></Field>
+    {generating && <small id={hintId} className="mt-1 block">Leave blank to generate a number, or enter your school’s existing number.</small>}
   </div>;
 }
 
@@ -69,7 +79,9 @@ function Editor({ kind, tenant, previous, statuses, onClose, onSaved }: {
       <div className="form-grid">
         <Field label={['students', 'staff', 'admissions'].includes(kind) ? 'Full name' : 'Title'}><input name="title" required maxLength={160} defaultValue={previous?.title} autoFocus/></Field>
         <Field label="Status"><select name="status" defaultValue={previous?.status ?? choices[0]}>{choices.map((option) => <option value={option} key={option}>{formatState(option)}</option>)}</select></Field>
-        {module.fields.map((spec) => <RecordField key={spec.name} spec={spec} value={previous?.data[spec.name]}/>)}
+        {module.fields.map((spec) => kind === 'students' && spec.name === 'number'
+          ? <StudentNumberField key={spec.name} name="data.number" existing={previous?.data.number}/>
+          : <RecordField key={spec.name} spec={spec} value={previous?.data[spec.name]}/>)}
         {module.links.map((link) => <Relationship key={link.name} label={link.label} name={'link.' + link.name} path={base + '/records/' + link.kind}
           selected={previous?.links[link.name]} required={link.required}/>)}
         {module.memberRole && <Relationship label={kind === 'classes' ? 'Class lead' : 'Linked account'} name="memberId"
@@ -98,7 +110,7 @@ function Enrolment({ tenant, id, onClose, onSaved }: { tenant: Tenant; id: strin
     {error && <ErrorMessage error={error}/>}
     <Relationship label="Class" name="classId" path={base + '/records/classes'} required/>
     <Relationship label="Term" name="termId" path={base + '/records/terms'} required/>
-    <Field label="Student number"><input name="studentNumber" maxLength={80} required/></Field>
+    <StudentNumberField name="studentNumber"/>
     <Field label="Enrolment date"><input name="startDate" type="date" required/></Field>
     <div className="dialog-actions"><button type="button" className="button outline" onClick={onClose}>Cancel</button>
       <button className="button primary" disabled={busy}>{busy ? 'Enrolling…' : 'Create enrolment'}</button></div>
@@ -209,9 +221,10 @@ export function Records({ tenant, kind, selected, create, navigate }: { tenant: 
       </form>
       {error ? <ErrorMessage error={error} retry={() => setRevision((n) => n + 1)}/> : !data ? <Loading/> : data.items.length ?
         <>
-          <div className="table-scroll"><table className="table"><thead><tr><th>Name or title</th><th>Status</th><th>Last updated</th><th><span className="sr-only">Open</span></th></tr></thead>
+          <div className="table-scroll"><table className="table"><thead><tr><th>Name or title</th>{kind === 'students' && <th>Student number</th>}<th>Status</th><th>Last updated</th><th><span className="sr-only">Open</span></th></tr></thead>
             <tbody>{data.items.map((item) => <tr key={item.id}>
               <td><button className="table-title" onClick={() => navigate(kind, item.id)}><span className="metric-icon color-1"><Icon size={17}/></span>{item.title}</button></td>
+              {kind === 'students' && <td>{item.data.number}</td>}
               <td><Badge status={item.status}/></td><td><time dateTime={item.updatedAt}>{dateLabel(item.updatedAt, tenant.institution.timeZone)}</time></td>
               <td><button className="icon-button" aria-label={'Open ' + item.title} onClick={() => navigate(kind, item.id)}><ChevronRight size={17}/></button></td>
             </tr>)}</tbody></table></div>

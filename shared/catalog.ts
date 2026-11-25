@@ -58,7 +58,7 @@ const define = (
 
 export const modules: Readonly<Record<string, Module>> = Object.freeze({
   students: define('Students', 'student', 'People', 'Manage student profiles and admission numbers.',
-    [f('number', 'Student number'), f('email', 'Contact email', 'email', false)], [], active,
+    [f('number', 'Student number', 'text', false), f('email', 'Contact email', 'email', false)], [], active,
     [...studentFacing, 'ACCOUNTANT', 'LIBRARIAN'], academic, { key: ['number'], memberRole: ['STUDENT'] }),
   admissions: define('Admissions', 'application', 'People', 'Track applications and enrol accepted students.',
     [f('number', 'Application number'), f('email', 'Applicant email', 'email', false), f('submittedOn', 'Application date', 'date')],

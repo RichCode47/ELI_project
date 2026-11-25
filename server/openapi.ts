@@ -92,7 +92,7 @@ export function openapi(config: Config) {
         delete: operation('Delete an eligible record', { write: true, parameters: [institution, kind, recordId, parameter('version', version, 'query', true)], status: 204 }),
       },
       [scope + '/admissions/{id}/enrol']: { post: operation('Enrol an accepted applicant', { write: true, status: 201,
-        parameters: [institution, recordId], body: object({ classId: id, termId: id, studentNumber: str, startDate: date }) }) },
+        parameters: [institution, recordId], body: object({ classId: id, termId: id, studentNumber: { ...str, maxLength: 254, description: 'Omit or leave blank to generate a student number.' }, startDate: date }, ['classId', 'termId', 'startDate']) }) },
       [scope + '/report-cards/{id}/results']: { get: operation('Get published marks for the report card’s student, term and class', { parameters: [institution, recordId] }) },
       '/v1/platform/institutions': { get: operation('List platform institution metadata', { parameters: [page, query] }) },
       '/v1/platform/institutions/{tenantId}/subscription': { patch: operation('Set plan, status, billing interval and renewal date', {

@@ -47,6 +47,8 @@ Create a student with `POST /institutions/{tenantId}/records/students`.
 }
 ```
 
+Omit `data.number` or send an empty string to generate a student number on creation. For admissions, `studentNumber` is also optional. Updates with a blank or omitted number retain the saved number. Schools can supply their own numbers, which must be unique within the institution regardless of case.
+
 Create returns `201` and an `item` with its ID and version. For an update, send the full editable payload plus the version. For deletion, pass the version as a query parameter. The API refuses stale operations with `409`. Foreign IDs and inaccessible records return `404`.
 
 Lists accept `q` for a title search, `status` and a one-based `page`. Responses contain `items`, `total`, `page` and `pageSize`. Date-only fields use YYYY-MM-DD. Decimal input uses strings with a period. Financial amounts returned as minor units use the record’s currency field.

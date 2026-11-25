@@ -141,11 +141,37 @@ test('PostgreSQL, API, role/record isolation and transactional workflows', { ski
     const report = await create('report-cards', payload('Term results', 'PUBLISHED', {}, { student: studentA, class: classId, term }));
     assert.deepEqual((await get(path(tenantA) + '/report-cards/' + report + '/results', studentAccount)).json.grades, [{ assessment: 'Term exam', marks: '88' }]);
   });
+  await t.test('student numbers support automatic assignment and existing school identifiers', async () => {
+    const students = rec(tenantA, 'students');
+    const [first, second] = await Promise.all([
+      post(students, adminA, payload('First generated number', 'ACTIVE')),
+      post(students, adminA, payload('Second generated number', 'ACTIVE', { number: '  ' })),
+    ]);
+    const firstStudent = first.json.item;
+    assert.match(firstStudent.data.number, /^STU-\d{10}$/);
+    assert.match(second.json.item.data.number, /^STU-\d{10}$/);
+    assert.notEqual(firstStudent.data.number, second.json.item.data.number);
+
+    const manual = 'School-0462';
+    const saved = (await post(students, adminA, payload('School number', 'ACTIVE', { number: manual }))).json.item;
+    assert.equal(saved.data.number, manual);
+    const conflict = await post(students, adminA, payload('Duplicate number', 'ACTIVE', { number: manual.toUpperCase() }), 409);
+    assert.equal(conflict.json.error.code, 'STUDENT_NUMBER_IN_USE');
+    await post(rec(tenantB, 'students'), adminB, payload('Other school number', 'ACTIVE', { number: manual }));
+
+    const renamed = await call(rec(tenantA, 'students', saved.id), 200, { method: 'PATCH', cookie: adminA,
+      body: { ...payload('Updated name', 'ACTIVE'), version: saved.version } });
+    assert.equal(renamed.json.item.data.number, manual);
+  });
   await t.test('accepted applications enrol once, and concurrent receipts cannot overpay an invoice', async () => {
     const application = await create('admissions', payload('Test Applicant', 'ACCEPTED', { number: 'APP-001', submittedOn: date }));
     const enrollment = { classId, termId: term, studentNumber: 'A100', startDate: date };
     const enrolled = await post(path(tenantA) + '/admissions/' + application + '/enrol', adminA, enrollment);
     assert.equal(enrolled.json.student.title, 'Test Applicant');
+    assert.equal(enrolled.json.student.data.number, 'A100');
+    const automatic = await create('admissions', payload('Automatic Applicant', 'ACCEPTED', { number: 'APP-002', submittedOn: date }));
+    const autoEnrolled = await post(path(tenantA) + '/admissions/' + automatic + '/enrol', adminA, { classId, termId: term, startDate: date });
+    assert.match(autoEnrolled.json.student.data.number, /^STU-\d{10}$/);
     await post(path(tenantA) + '/admissions/' + application + '/enrol', adminA, enrollment, 422);
     const invoice = await create('invoices', payload('Term tuition', 'ISSUED', { number: 'I100', amount: '100', dueOn: date }, { student: studentA }));
     const outcomes = await Promise.all([1, 2].map(async (i) => fetch(root + rec(tenantA, 'receipts'), {
