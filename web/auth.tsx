@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { FormEvent } from 'react';
+import type { FormEvent, ReactNode } from 'react';
 import { ArrowRight, BookOpen, Building2, Check, GraduationCap, ShieldCheck } from 'lucide-react';
 import { institutionTypes } from '../shared/catalog.js';
 import { api } from './api.js';
@@ -39,10 +39,7 @@ export function Auth({ onSuccess, invite, studentPortal = false }: { onSuccess: 
     setInstitution(value);
     if (!slugEdited) setSlug(value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48).replace(/-$/g, ''));
   }
-  return <main className="auth">
-    <section className="auth-panel">
-      <div className="auth-brand"><Brand/></div>
-      <div className="auth-content">
+  return <AuthLayout studentPortal={studentPortal}>
         <h1>{title}</h1>
         <p>{invite ? 'Enter your name and password to join your institution.' : register ? 'Start a 14-day Professional trial for your school, college or university.' :
           platform ? 'Sign in with your authorised platform account.' : studentPortal ? 'Use the workspace ID and student account provided by your school.' : 'Sign in to your institution’s ELI EdTech workspace.'}</p>
@@ -59,12 +56,20 @@ export function Auth({ onSuccess, invite, studentPortal = false }: { onSuccess: 
           <button className="button primary auth-submit" disabled={busy}>{busy ? 'Please wait…' : register ? 'Create workspace' : invite ? 'Join workspace' : 'Sign in'}<ArrowRight size={17}/></button>
         </form>
         {!invite && <div className="auth-links">
-          {studentPortal ? <a className="text-button" href="/">Back to workspace</a> : register || platform ? <button className="text-button" onClick={() => change('login')}>Back to workspace sign-in</button> :
+          {studentPortal ? <><a className="text-button" href="/student#register">Register as a student</a>
+            <a className="muted-link" href="/">Back to workspace</a></> : register || platform ? <button className="text-button" onClick={() => change('login')}>Back to workspace sign-in</button> :
             <><span>New institution? <button className="text-button" onClick={() => change('register')}>Create a workspace</button></span>
               <a className="text-button" href="/student">Student portal</a>
               <button className="muted-link" onClick={() => change('platform')}>Platform sign-in</button></>}
         </div>}
-      </div>
+  </AuthLayout>;
+}
+
+export function AuthLayout({ studentPortal = false, children }: { studentPortal?: boolean; children: ReactNode }) {
+  return <main className="auth">
+    <section className="auth-panel">
+      <div className="auth-brand"><Brand/></div>
+      <div className="auth-content">{children}</div>
       <div className="auth-footer">ELI EdTech <span>·</span> Built for education</div>
     </section>
     <aside className="auth-art" aria-label="About ELI EdTech">

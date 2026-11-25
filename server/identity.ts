@@ -3,7 +3,8 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { currencies, institutionTypes, modules, roles } from '../shared/catalog.js';
 import type { PrismaClient } from '../generated/prisma/client.js';
-import { inContext } from './db.js';
+import { inContext, lockTenantRecords } from './db.js';
+import { issueInvitation } from './invitations.js';
 import type { Transaction } from './db.js';
 import { session, tenantAccess, tenantAdmin, platformAdmin, requireModule } from './access.js';
 import {
@@ -14,6 +15,9 @@ import type { Config } from './security.js';
 
 const signup = z.object({ institution: name, slug, type: z.enum(institutionTypes), name, email, password }).strict();
 const signIn = z.object({ slug: z.union([slug, z.literal('')]), email, password: z.string().min(1).max(128), portal: z.literal('student').optional() }).strict();
+const studentRegistration = z.object({
+  slug, name, email, studentNumber: z.string().trim().max(254).optional(),
+}).strict();
 const accept = z.object({ tenantId: uuid, token: secureToken, name, password }).strict();
 const appearance = z.object({
   name, currency: z.enum(currencies), whiteLabel: z.boolean().default(false),
@@ -78,6 +82,25 @@ export function identityRoutes(db: PrismaClient, config: Config) {
     res.status(201).json({ institution: tenant.institution });
   });
 
+  router.post('/auth/student-registration', async (req, res) => {
+    const body = studentRegistration.parse(req.body);
+    const institution = await db.institution.findFirst({
+      where: { slug: body.slug, subscription: { status: { in: ['TRIAL', 'ACTIVE'] }, endsAt: { gt: new Date() } } },
+      select: { id: true },
+    });
+    if (!institution) throw new HttpError(404, 'WORKSPACE_UNAVAILABLE', 'No active school workspace was found for this ID.');
+    await inContext(db, institution.id, async (tx) => {
+      const [created] = await tx.studentRegistration.createManyAndReturn({
+        data: { tenantId: institution.id, name: body.name, email: body.email, studentNumber: body.studentNumber || null },
+        skipDuplicates: true, select: { id: true },
+      });
+      if (created) await tx.auditEvent.create({
+        data: { tenantId: institution.id, action: 'student_registration.submitted', targetId: created.id },
+      });
+    });
+    res.status(202).json({ status: 'received' });
+  });
+
   router.post('/auth/login', async (req, res) => {
     const body = signIn.parse(req.body);
     const user = await db.user.findUnique({ where: { email: body.email } });
@@ -101,6 +124,12 @@ export function identityRoutes(db: PrismaClient, config: Config) {
     const userId = await inContext(db, body.tenantId, async (tx) => {
       const invite = await tx.invitation.findUnique({ where: { tokenHash } });
       if (!invite || invite.acceptedAt || invite.revokedAt || invite.expiresAt < new Date()) missing();
+      const tenantId = body.tenantId;
+      if (invite.registrationId) await lockTenantRecords(tx, tenantId);
+      const registration = invite.registrationId
+        ? await tx.studentRegistration.findUnique({ where: { tenantId_id: { tenantId, id: invite.registrationId } } })
+        : null;
+      if (invite.registrationId && (registration?.status !== 'INVITED' || !registration.studentId || invite.role !== 'STUDENT')) missing();
       const existing = await tx.user.findUnique({ where: { email: invite.email } });
       if (existing && !await verifyPassword(body.password, existing.passwordHash)) throw badLogin();
       const user = existing ?? await createAccount(tx, invite.email, body.name, await hashPassword(body.password));
@@ -108,8 +137,21 @@ export function identityRoutes(db: PrismaClient, config: Config) {
         where: { tokenHash, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() } }, data: { acceptedAt: new Date() },
       });
       if (consumed.count !== 1) missing();
-      await tx.membership.create({ data: { tenantId: body.tenantId, userId: user.id, role: invite.role } });
-      await tx.auditEvent.create({ data: { tenantId: body.tenantId, actorId: user.id, action: 'invitation.accepted' } });
+      const member = await tx.membership.create({ data: { tenantId, userId: user.id, role: invite.role }, select: { id: true } });
+      if (registration?.studentId) {
+        const linked = await tx.record.updateMany({
+          where: { tenantId, id: registration.studentId, kind: 'students', status: 'ACTIVE', memberId: null },
+          data: { memberId: member.id, version: { increment: 1 } },
+        });
+        if (linked.count !== 1) throw new HttpError(409, 'PROFILE_UNAVAILABLE', 'Ask the school to check your linked profile and reissue the invitation.');
+        await tx.studentRegistration.update({
+          where: { tenantId_id: { tenantId, id: registration.id } }, data: { status: 'REGISTERED' },
+        });
+        await tx.auditEvent.create({
+          data: { tenantId, actorId: user.id, action: 'student_registration.completed', targetId: registration.id },
+        });
+      }
+      await tx.auditEvent.create({ data: { tenantId, actorId: user.id, action: 'invitation.accepted' } });
       return user.id;
     });
     writeSession(res, config, await openSession(userId, body.tenantId, requestToken(req, config)));
@@ -195,22 +237,13 @@ export function identityRoutes(db: PrismaClient, config: Config) {
     const tenantId = uuid.parse(req.params.tenantId);
     const body = z.object({ email, role: z.enum(roles).exclude(['ADMIN']) }).strict().parse(req.body);
     const active = await session(db, requestToken(req, config));
-    const secret = token();
-    const expiresAt = new Date(Date.now() + 3 * day);
-    await inContext(db, tenantId, async (tx) => {
+    const invitation = await inContext(db, tenantId, async (tx) => {
       const context = await tenantAccess(tx, active, tenantId);
       tenantAdmin(context.member.role);
       if (!context.operational) throw new HttpError(403, 'SUBSCRIPTION_INACTIVE', 'This institution’s subscription is inactive.');
-      await tx.$queryRaw`SELECT id FROM "Institution" WHERE id = ${tenantId}::uuid FOR UPDATE`;
-      const member = await tx.membership.findFirst({ where: { tenantId, user: { email: body.email } }, select: { id: true } });
-      if (member) throw new HttpError(409, 'ALREADY_MEMBER', 'This account already belongs to your institution.');
-      await tx.invitation.updateMany({
-        where: { tenantId, email: body.email, acceptedAt: null, revokedAt: null }, data: { revokedAt: new Date() },
-      });
-      await tx.invitation.create({ data: { ...body, tenantId, tokenHash: digest(secret), expiresAt } });
-      await tx.auditEvent.create({ data: { tenantId, actorId: active.user.id, action: 'invitation.created' } });
+      return issueInvitation(tx, config.origin, { ...body, tenantId, actorId: active.user.id });
     });
-    res.status(201).json({ url: config.origin + '/#invite=' + tenantId + '.' + secret, expiresAt });
+    res.status(201).json(invitation);
   });
 
   router.get('/institutions/:tenantId/audit', async (req, res) => {

@@ -2,12 +2,14 @@ import { Router } from 'express';
 import type { Request } from 'express';
 import { z } from 'zod';
 import { modules, reportingRoles } from '../shared/catalog.js';
+import { registrationStatuses } from '../shared/student-registration.js';
 import type { StudentPortalData } from '../shared/student-portal.js';
 import type { Prisma, PrismaClient } from '../generated/prisma/client.js';
-import { requireModule, session, tenantAccess, visibility } from './access.js';
+import { requireModule, session, tenantAccess, tenantAdmin, visibility } from './access.js';
 import type { TenantAccess } from './access.js';
-import { inContext } from './db.js';
+import { inContext, lockTenantRecords } from './db.js';
 import { csv } from './csv.js';
+import { issueInvitation } from './invitations.js';
 import type { Transaction } from './db.js';
 import { bodySchema, changeSchema, contents, moduleFor, relatedTo, statesFor, validatedRecord } from './record-rules.js';
 import { deny, HttpError, invalid, missing, requestToken, uuid } from './security.js';
@@ -21,6 +23,18 @@ const pageSchema = z.object({
   q: z.string().trim().max(100).default(''), page: z.coerce.number().int().min(1).max(100000).default(1),
   status: z.string().max(24).optional(),
 });
+
+const registrationReview = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('decline') }).strict(),
+  z.object({ action: z.literal('reissue') }).strict(),
+  z.object({
+    action: z.literal('approve'),
+    profile: z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('existing'), studentId: uuid }).strict(),
+      z.object({ kind: z.literal('new'), studentNumber: z.string().trim().max(254).optional() }).strict(),
+    ]),
+  }).strict(),
+]);
 
 function present(entry: WithLinks, context: TenantAccess) {
   const data = { ...contents(entry) };
@@ -47,10 +61,6 @@ async function fetchOne(tx: Transaction, context: TenantAccess, kind: string, id
   const entry = await tx.record.findFirst({ where: { ...scoped(context, kind), id }, include });
   if (!entry) missing();
   return entry;
-}
-async function versionLock(tx: Transaction, tenantId: string) {
-  // A tenant-local lock keeps relationship checks and ledger updates consistent with concurrent writes.
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${tenantId}, 0))`;
 }
 async function audit(tx: Transaction, context: TenantAccess, action: string, kind: string, id: string) {
   await tx.auditEvent.create({ data: { tenantId: context.tenant.id, actorId: context.user.id, action, kind, targetId: id } });
@@ -104,7 +114,7 @@ export function recordRoutes(db: PrismaClient, config: Config) {
     const body = bodySchema.parse(req.body);
     const item = await run(req, async (tx, context) => {
       requireModule(context, moduleFor(kind), 'write');
-      await versionLock(tx, context.tenant.id);
+      await lockTenantRecords(tx, context.tenant.id);
       return present(await createRecord(tx, context, kind, body), context);
     });
     res.status(201).json({ item });
@@ -117,7 +127,7 @@ export function recordRoutes(db: PrismaClient, config: Config) {
       requireModule(context, moduleFor(kind), 'write');
       if (context.member.role === 'STUDENT') deny();
       const tenantId = context.tenant.id;
-      await versionLock(tx, tenantId);
+      await lockTenantRecords(tx, tenantId);
       const previous = await fetchOne(tx, context, kind, uuid.parse(req.params.id));
       if (previous.version !== version) throw new HttpError(409, 'STALE_RECORD', 'This record changed. Refresh and try again.');
       const { preserveLinks, ...data } = await validatedRecord(tx, context, kind, body, previous);
@@ -141,7 +151,7 @@ export function recordRoutes(db: PrismaClient, config: Config) {
       requireModule(context, moduleFor(kind), 'write');
       if (!['ADMIN', 'REGISTRAR', 'PRINCIPAL', 'ACCOUNTANT', 'LIBRARIAN'].includes(context.member.role)) deny();
       const tenantId = context.tenant.id;
-      await versionLock(tx, tenantId);
+      await lockTenantRecords(tx, tenantId);
       const entry = await fetchOne(tx, context, kind, uuid.parse(req.params.id));
       if (entry.version !== version) throw new HttpError(409, 'STALE_RECORD', 'This record changed. Refresh and try again.');
       if (['receipts', 'loans', 'submissions'].includes(kind)
@@ -161,7 +171,7 @@ export function recordRoutes(db: PrismaClient, config: Config) {
     const items = await run(req, async (tx, context) => {
       requireModule(context, moduleFor('admissions'), 'write');
       const tenantId = context.tenant.id;
-      await versionLock(tx, tenantId);
+      await lockTenantRecords(tx, tenantId);
       const application = await fetchOne(tx, context, 'admissions', uuid.parse(req.params.id));
       if (application.status !== 'ACCEPTED') invalid('Only an accepted application can be enrolled.');
       const contact = contents(application).email;
@@ -218,6 +228,95 @@ export function recordRoutes(db: PrismaClient, config: Config) {
       return csv(rows);
     });
     res.attachment(kind + '.csv').type('text/csv; charset=utf-8').send(output);
+  });
+
+  const registrationPath = '/institutions/:tenantId/student-registrations';
+  router.get(registrationPath, async (req, res) => {
+    const { page, status } = z.object({
+      page: z.coerce.number().int().min(1).max(100000).default(1),
+      status: z.enum(registrationStatuses).default('PENDING'),
+    }).parse(req.query);
+    const items = await run(req, async (tx, context) => {
+      tenantAdmin(context.member.role);
+      return tx.studentRegistration.findMany({
+        where: { tenantId: context.tenant.id, status },
+        select: { id: true, name: true, email: true, studentNumber: true, studentId: true, status: true, createdAt: true },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], skip: (page - 1) * 50, take: 51,
+      });
+    });
+    res.json({ items: items.slice(0, 50), hasMore: items.length > 50 });
+  });
+
+  router.get(registrationPath + '/students', async (req, res) => {
+    const q = z.string().trim().max(100).default('').parse(req.query.q);
+    const items = await run(req, async (tx, context) => {
+      tenantAdmin(context.member.role);
+      requireModule(context, modules.students, 'read');
+      const students = await tx.record.findMany({
+        where: { ...scoped(context, 'students'), status: 'ACTIVE', memberId: null,
+          ...(q ? { OR: [{ title: { contains: q, mode: 'insensitive' } }, { key: JSON.stringify([q.toLowerCase()]) }] } : {}) },
+        select: { id: true, title: true, data: true }, orderBy: [{ title: 'asc' }, { id: 'asc' }], take: 25,
+      });
+      return students.map((student) => ({ id: student.id, title: student.title + ' · ' + contents(student).number }));
+    });
+    res.json({ items });
+  });
+
+  router.post(registrationPath + '/:id/review', async (req, res) => {
+    const id = uuid.parse(req.params.id);
+    const review = registrationReview.parse(req.body);
+    const result = await run(req, async (tx, context) => {
+      tenantAdmin(context.member.role);
+      requireModule(context, modules.students, 'write');
+      const tenantId = context.tenant.id;
+      const where = { tenantId_id: { tenantId, id } };
+      await lockTenantRecords(tx, tenantId);
+      const registration = await tx.studentRegistration.findUnique({ where });
+      if (!registration) missing();
+      if (registration.status === 'REGISTERED') throw new HttpError(409, 'REGISTRATION_COMPLETED', 'This student has already registered.');
+
+      if (review.action === 'decline') {
+        const now = new Date();
+        await tx.invitation.updateMany({ where: { tenantId, registrationId: id, acceptedAt: null, revokedAt: null }, data: { revokedAt: now } });
+        await tx.studentRegistration.update({ where, data: { status: 'DECLINED', reviewedAt: now } });
+        await audit(tx, context, 'student_registration.declined', 'student-registration', id);
+        return { status: 'DECLINED' };
+      }
+
+      if ((review.action === 'reissue') !== (registration.status === 'INVITED')) {
+        throw new HttpError(409, 'REGISTRATION_CHANGED', 'This request changed. Refresh and review it again.');
+      }
+      let studentId = registration.studentId;
+      if (review.action === 'approve') {
+        if (review.profile.kind === 'new') {
+          if (studentId && await tx.record.findUnique({ where: { tenantId_id: { tenantId, id: studentId } }, select: { id: true } })) {
+            throw new HttpError(409, 'PROFILE_ALREADY_CREATED', 'Select the existing profile for this request.');
+          }
+          const student = await createRecord(tx, context, 'students', {
+            title: registration.name, status: 'ACTIVE', links: {},
+            data: { email: registration.email, ...(review.profile.studentNumber ? { number: review.profile.studentNumber } : {}) },
+          });
+          studentId = student.id;
+        } else studentId = review.profile.studentId;
+      }
+      if (!studentId) invalid('Select a student profile.');
+      const student = await tx.record.findFirst({
+        where: { tenantId, id: studentId, kind: 'students', status: 'ACTIVE', memberId: null }, select: { id: true },
+      });
+      if (!student) throw new HttpError(409, 'PROFILE_UNAVAILABLE', 'Select an active student profile without a linked account.');
+      const reserved = await tx.studentRegistration.findFirst({
+        where: { tenantId, id: { not: id }, studentId, status: 'INVITED' }, select: { id: true },
+      });
+      if (reserved) throw new HttpError(409, 'PROFILE_RESERVED', 'This profile has an open invitation from another registration.');
+
+      const invitation = await issueInvitation(tx, config.origin, {
+        tenantId, actorId: context.user.id, email: registration.email, role: 'STUDENT', registrationId: id,
+      });
+      await tx.studentRegistration.update({ where, data: { studentId, status: 'INVITED', reviewedAt: new Date() } });
+      await audit(tx, context, review.action === 'reissue' ? 'student_registration.reissued' : 'student_registration.approved', 'student-registration', id);
+      return { status: 'INVITED', ...invitation };
+    });
+    res.json(result);
   });
 
   router.get('/institutions/:tenantId/student-portal', async (req, res) => {

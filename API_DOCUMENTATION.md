@@ -15,6 +15,7 @@ Paths below are relative to `/api/v1`. Replace `{tenantId}` with the UUID return
 | Method and path | Purpose |
 | --- | --- |
 | `POST /auth/register` | Create an institution, its administrator membership and trial |
+| `POST /auth/student-registration` | Submit a registration request using the school’s workspace ID |
 | `POST /auth/login` | Sign in to the specified workspace or platform |
 | `POST /auth/accept-invite` | Consume a tenant UUID and single-use invitation token |
 | `GET /auth/me` | Active identity and workspace scope |
@@ -23,6 +24,9 @@ Paths below are relative to `/api/v1`. Replace `{tenantId}` with the UUID return
 | `GET /institutions/{tenantId}/members` | List or search members. Use `?module=...` for assignable member choices |
 | `PATCH /institutions/{tenantId}/members/{id}` | Enable or disable an eligible membership |
 | `POST /institutions/{tenantId}/invitations` | Create or replace a role invitation |
+| `GET /institutions/{tenantId}/student-registrations` | Administrator queue filtered by status and page |
+| `GET /institutions/{tenantId}/student-registrations/students` | Search active, unlinked student profiles |
+| `POST /institutions/{tenantId}/student-registrations/{id}/review` | Approve with an existing or new profile, decline, or reissue an invitation |
 | `GET /institutions/{tenantId}/student-portal` | Student-only summary with profile number, timetable, published grades, attendance and announcements |
 | `GET /institutions/{tenantId}/dashboard` | Role-scoped counts, weekly attendance and activity |
 | `POST /institutions/{tenantId}/reports/export` | Download up to 5,000 visible records as CSV, with optional `q` and `status` filters |

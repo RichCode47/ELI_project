@@ -17,9 +17,9 @@ export function Empty({ title, children }: { title: string; children?: ReactNode
   return <div className="empty"><div className="empty-icon"><BookOpen size={23}/></div><h3>{title}</h3>{children && <p>{children}</p>}</div>;
 }
 export function Badge({ status }: { status: string }) {
-  const good = ['ACTIVE', 'PUBLISHED', 'PRESENT', 'PAID', 'POSTED', 'ACCEPTED', 'RETURNED', 'ENROLLED', 'SENT', 'SUBMITTED'].includes(status);
+  const good = ['ACTIVE', 'PUBLISHED', 'PRESENT', 'PAID', 'POSTED', 'ACCEPTED', 'RETURNED', 'ENROLLED', 'SENT', 'SUBMITTED', 'REGISTERED'].includes(status);
   const alert = ['ABSENT', 'EXPIRED', 'DECLINED', 'VOID', 'SUSPENDED'].includes(status);
-  const soft = ['LATE', 'PENDING', 'TRIAL', 'PART_PAID', 'OPEN', 'ISSUED', 'EXCUSED'].includes(status);
+  const soft = ['LATE', 'PENDING', 'TRIAL', 'PART_PAID', 'OPEN', 'ISSUED', 'EXCUSED', 'INVITED'].includes(status);
   return <span className={'badge ' + (good ? 'good' : alert ? 'alert' : soft ? 'soft' : '')}><i/>{formatState(status)}</span>;
 }
 export function Dialog({ title, onClose, children, wide }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {

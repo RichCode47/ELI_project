@@ -7,6 +7,8 @@ GRANT UPDATE ("name", "currency", "timeZone", "brand", "whiteLabel") ON "Institu
 GRANT UPDATE ON "Subscription" TO :"runtime_role";
 GRANT UPDATE ("active") ON "Membership" TO :"runtime_role";
 GRANT UPDATE ("acceptedAt", "revokedAt") ON "Invitation" TO :"runtime_role";
+GRANT SELECT, INSERT ON "StudentRegistration" TO :"runtime_role";
+GRANT UPDATE ("status", "studentId", "reviewedAt") ON "StudentRegistration" TO :"runtime_role";
 GRANT SELECT ON "User" TO :"runtime_role";
 GRANT INSERT ("id", "email", "name", "passwordHash", "createdAt") ON "User" TO :"runtime_role";
 GRANT SELECT, INSERT, UPDATE, DELETE ON "Session", "Record", "RecordLink", "RateBucket" TO :"runtime_role";

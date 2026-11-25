@@ -1,4 +1,5 @@
 import { modules, plans, roles, currencies, institutionTypes } from '../shared/catalog.js';
+import { registrationStatuses } from '../shared/student-registration.js';
 import type { Config } from './security.js';
 
 const str = { type: 'string' };
@@ -61,6 +62,10 @@ export function openapi(config: Config) {
       '/v1/openapi.json': { get: operation('OpenAPI document', { public: true }) },
       '/v1/auth/register': { post: operation('Register an institution and start a trial', { write: true, public: true, status: 201,
         body: object({ institution: str, slug: str, type: text(institutionTypes), name: str, ...credentials }) }) },
+      '/v1/auth/student-registration': { post: operation('Request student access to a school workspace', {
+        write: true, public: true, status: 202,
+        body: object({ slug: str, name: str, email: credentials.email, studentNumber: { ...str, maxLength: 254 } }, ['slug', 'name', 'email']),
+      }) },
       '/v1/auth/login': { post: operation('Create a workspace or platform session', { write: true, public: true, status: 204,
         body: object({ slug: str, ...credentials, portal: { const: 'student' } }, ['slug', 'email', 'password']) }) },
       '/v1/auth/accept-invite': { post: operation('Accept a single-use membership invitation', { write: true, public: true, status: 204,
@@ -78,6 +83,21 @@ export function openapi(config: Config) {
       [scope + '/reports/export']: { post: operation('Export up to 5,000 role-visible records as CSV', {
         write: true, parameters: [institution], response: str, mediaType: 'text/csv',
         body: object({ kind: text(Object.keys(modules)), q: str, status: str }, ['kind']),
+      }) },
+      [scope + '/student-registrations']: { get: operation('List registration requests as an institution administrator', {
+        parameters: [institution, page, parameter('status', text(registrationStatuses), 'query')],
+      }) },
+      [scope + '/student-registrations/students']: { get: operation('Find unlinked student profiles for registration review', {
+        parameters: [institution, query],
+      }) },
+      [scope + '/student-registrations/{id}/review']: { post: operation('Approve, decline or renew a student registration invitation', {
+        write: true, parameters: [institution, recordId], body: { oneOf: [
+          object({ action: { const: 'decline' } }), object({ action: { const: 'reissue' } }),
+          object({ action: { const: 'approve' }, profile: { oneOf: [
+            object({ kind: { const: 'existing' }, studentId: id }),
+            object({ kind: { const: 'new' }, studentNumber: { ...str, maxLength: 254 } }, ['kind']),
+          ] } }),
+        ] },
       }) },
       [scope + '/student-portal']: { get: operation('Get the signed-in student’s timetable, published grades, attendance and announcements', { parameters: [institution] }) },
       [scope + '/dashboard']: { get: operation('Get role-filtered metrics, attendance and activity', { parameters: [institution] }) },

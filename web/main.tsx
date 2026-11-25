@@ -11,6 +11,7 @@ import { Dashboard } from './dashboard.js';
 import { iconFor, tenantNav } from './navigation.js';
 import { Records } from './records.js';
 import { StudentPortal } from './student-portal.js';
+import { StudentRegistrationForm, StudentRegistrations } from './student-registration.js';
 import { Brand, Dialog, ErrorMessage, Loading, getError } from './ui.js';
 import './style.css';
 
@@ -73,6 +74,7 @@ function Workspace({ profile, route, refresh }: { profile: Profile; route: strin
   else if (page === 'overview') content = student ? <StudentPortal tenant={profile}/> : <Dashboard tenant={profile} open={open}/>;
   else if (page === 'settings') content = <Settings tenant={profile} refresh={refresh}/>;
   else if (page === 'members') content = <Members tenant={profile}/>;
+  else if (page === 'student-registrations') content = <StudentRegistrations tenant={profile}/>;
   else if (page === 'subscription') content = <SubscriptionPage tenant={profile} value={profile.subscription}/>;
   else if (page === 'audit') content = <Audit tenant={profile}/>;
   else if (Object.hasOwn(modules, page)) content = <Records key={page} tenant={profile} kind={page} selected={selected === 'new' ? undefined : selected} create={selected === 'new'} navigate={open}/>;
@@ -138,7 +140,8 @@ function App() {
       location.replace('/student' + (hash ? '#' + hash : ''));
     }
   }, [data, hash, studentPortal]);
-  if (hash.startsWith('invite=')) return <Auth invite={hash.slice(7)} onSuccess={refresh}/>;
+  if (studentPortal && hash === 'register') return <StudentRegistrationForm/>;
+  if (hash.startsWith('invite=')) return <Auth invite={hash.slice(7)} onSuccess={refresh} studentPortal={studentPortal}/>;
   const signedOut = error instanceof ApiError && [401, 404].includes(error.status);
   const current = data ?? profile;
   const isStudent = !!current && !current.platform && current.role === 'STUDENT';

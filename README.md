@@ -24,7 +24,7 @@ npm run dev
 
 Open [the local workspace](http://127.0.0.1:5173) and choose **Create a workspace**. Use the checkout’s `.env` only for local settings. Keep real institution data out of local and preview environments.
 
-Students sign in at [the Student Portal](http://127.0.0.1:5173/student) with their institution’s Workspace ID. An administrator invites them as a **Student** under **Members**, then links the account to their record under **Students**.
+Students can [request registration](http://127.0.0.1:5173/student#register) using their school’s Workspace ID. Administrators review requests under **Student registrations**, verify the requester’s identity, and select an existing student profile or create one. Share the single-use invitation privately with the verified student. The account is linked to the chosen profile when the student accepts. Students then sign in at [the Student Portal](http://127.0.0.1:5173/student).
 
 For a synthetic demo, set `DEMO_EMAIL` and `DEMO_PASSWORD` in the ignored local `.env`, then run `npm run db:seed` against a fresh local database. The workspace ID defaults to `lusaka-demo`. The seed uses the same API as the browser.
 

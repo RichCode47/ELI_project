@@ -10,8 +10,8 @@ import { iconFor } from './navigation.js';
 import { Badge, Dialog, Empty, ErrorMessage, Field, getError, Loading } from './ui.js';
 
 type Choice = { id: string; title: string };
-export function Relationship({ label, name, path, selected, required, members }: {
-  label: string; name: string; path: string; selected?: Choice; required?: boolean; members?: boolean;
+export function Relationship({ label, name, path, selected, required, members, searchPlaceholder = 'Find by name' }: {
+  label: string; name: string; path: string; selected?: Choice; required?: boolean; members?: boolean; searchPlaceholder?: string;
 }) {
   const [search, setSearch] = useState('');
   const [query, setQuery] = useState('');
@@ -24,14 +24,14 @@ export function Relationship({ label, name, path, selected, required, members }:
     <Field label={label}><select name={name} value={choice} required={required} onChange={(event) => {
       setChoice(event.target.value); setRemembered(choices.find((item) => item.id === event.target.value));
     }}><option value="">Select {label.toLowerCase()}</option>{choices.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></Field>
-    <div className="relation-search"><input aria-label={'Search ' + label.toLowerCase() + ' choices'} maxLength={100} placeholder="Find by name" value={search}
+    <div className="relation-search"><input aria-label={'Search ' + label.toLowerCase() + ' choices'} maxLength={100} placeholder={searchPlaceholder} value={search}
       onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); setQuery(search); } }}/>
       <button type="button" className="button subtle" onClick={() => setQuery(search)}><Search size={15}/> Find</button></div>
     {error && <ErrorMessage error={error}/>}
   </div>;
 }
 
-function StudentNumberField({ name, existing }: { name: string; existing?: string | number }) {
+export function StudentNumberField({ name, existing }: { name: string; existing?: string | number }) {
   const hintId = useId();
   const generating = existing === undefined;
   return <div>

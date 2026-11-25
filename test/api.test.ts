@@ -66,6 +66,7 @@ test('PostgreSQL, API, role/record isolation and transactional workflows', { ski
   await t.test('migrations enable forced policies with a restricted runtime identity', async () => {
     await checkDatabase(db);
     assert.equal(await db.record.count(), 0);
+    assert.equal(await db.studentRegistration.count(), 0);
     const [grants] = await db.$queryRaw<{ insert: boolean; update: boolean }[]>`
       SELECT has_column_privilege(current_user, 'public."User"', 'platformAdmin', 'INSERT') AS insert,
         has_column_privilege(current_user, 'public."User"', 'platformAdmin', 'UPDATE') AS update`;
@@ -220,6 +221,49 @@ test('PostgreSQL, API, role/record isolation and transactional workflows', { ski
     await call(rec(tenantA, 'loans', loan), 200, { method: 'PATCH', cookie: adminA,
       body: { ...payload('Checkout', 'RETURNED', details, { book, student: studentA }), version: 1 } });
     await create('loans', payload('New checkout', 'OPEN', details, { book, student: otherA }));
+  });
+  await t.test('student registration requires school approval and links the selected profile on acceptance', async () => {
+    const queue = path(tenantA) + '/student-registrations';
+    const intake = prefix + '/auth/student-registration';
+    const address = 'registration-' + suffix + '@example.test';
+    const request = { slug: aSlug, email: address, name: 'Registration Learner', studentNumber: 'A002' };
+
+    await post(intake, '', request, 202);
+    await post(intake, '', { ...request, name: 'Duplicate submission' }, 202);
+    await get(queue, teacherAccount, 403);
+    await get(queue, studentAccount, 403);
+    await get(queue, adminB, 404);
+    const pending = (await get(queue, adminA)).json.items;
+    assert.equal(pending.length, 1);
+    assert.equal(pending[0].name, request.name);
+    assert.equal(pending[0].studentNumber, 'A002');
+    const review = queue + '/' + pending[0].id + '/review';
+    await post(review, adminB, { action: 'decline' }, 404);
+    await post(review, adminA, { action: 'approve', profile: { kind: 'existing', studentId: studentB } }, 409);
+    const match = (await get(queue + '/students?q=A002', adminA)).json.items;
+    assert.equal(match[0].id, otherA);
+    const first = await post(review, adminA, { action: 'approve', profile: { kind: 'existing', studentId: otherA } }, 200);
+    const second = await post(review, adminA, { action: 'reissue' }, 200);
+
+    function acceptance(url: string) {
+      const [tenantId, token] = new URL(url).hash.slice(8).split('.');
+      return { tenantId, token, name: request.name, password: sample };
+    }
+    assert.equal(new URL(second.json.url).pathname, '/student');
+    await post(prefix + '/auth/accept-invite', '', acceptance(first.json.url), 404);
+    const joined = await post(prefix + '/auth/accept-invite', '', acceptance(second.json.url), 204);
+    assert.deepEqual((await get(path(tenantA) + '/student-portal', joined.cookie)).json.profile, { id: otherA, number: 'A002' });
+    assert.equal((await get(queue + '?status=REGISTERED', adminA)).json.items[0].id, pending[0].id);
+    await post(review, adminA, { action: 'decline' }, 409);
+
+    await post(intake, '', { ...request, email: 'other-registration-' + suffix + '@example.test', studentNumber: '' }, 202);
+    const fresh = (await get(queue, adminA)).json.items[0];
+    const freshReview = queue + '/' + fresh.id + '/review';
+    const created = await post(freshReview, adminA, { action: 'approve', profile: { kind: 'new' } }, 200);
+    const invited = (await get(queue + '?status=INVITED', adminA)).json.items[0];
+    assert.match((await get(rec(tenantA, 'students', invited.studentId), adminA)).json.item.data.number, /^STU-\d{10}$/);
+    await post(freshReview, adminA, { action: 'decline' }, 200);
+    await post(prefix + '/auth/accept-invite', '', acceptance(created.json.url), 404);
   });
   await t.test('platform access stays separate and entitlement changes are enforced', { skip: !ownerUrl }, async () => {
     const platformDb = database(ownerUrl!);

@@ -51,9 +51,11 @@ export function createApp(db: PrismaClient, config: Config) {
   });
   app.get('/api/v1/openapi.json', (_req, res) => { res.json(openapi(config)); });
   app.use('/api/v1', async (req, _res, next) => {
-    const endpoint = ['/auth/login', '/auth/register', '/auth/accept-invite'].includes(req.path.toLowerCase().replace(/\/+$/, '')) ? 'identity' : 'api';
-    const window = endpoint === 'identity' ? 900_000 : 60_000;
-    const limit = endpoint === 'identity' ? 20 : 400;
+    const path = req.path.toLowerCase().replace(/\/+$/, '');
+    const identity = ['/auth/login', '/auth/register', '/auth/accept-invite'].includes(path);
+    const endpoint = path === '/auth/student-registration' ? 'student-registration' : identity ? 'identity' : 'api';
+    const window = endpoint === 'api' ? 60_000 : 900_000;
+    const limit = endpoint === 'api' ? 400 : 20;
     const now = new Date();
     const key = digest(endpoint + ':' + (req.ip ?? 'unknown'));
     const [bucket] = await db.$queryRaw<{ hits: number; resetAt: Date }[]>`

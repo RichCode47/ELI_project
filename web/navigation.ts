@@ -13,7 +13,7 @@ export const iconMap = {
   'report-cards': FileText, fees: Wallet, invoices: FileText, receipts: Receipt, courses: BookOpen, lessons: BookCopy,
   assignments: NotebookPen, submissions: ClipboardList, books: LibraryBig, loans: BookCopy, announcements: Megaphone,
   notifications: Bell, certificates: FileBadge, transcripts: FileText, settings: Settings, audit: Shield, members: UsersRound,
-  subscription: Wallet, institutions: Building2,
+  subscription: Wallet, institutions: Building2, 'student-registrations': ClipboardList,
 };
 export const iconFor = (key: string) => iconMap[key as keyof typeof iconMap] ?? FileText;
 export function tenantNav(profile: Tenant) {
@@ -26,6 +26,7 @@ export function tenantNav(profile: Tenant) {
     ])),
     ...(profile.role === 'ADMIN' ? { Settings: [
       { id: 'settings', label: 'Institution settings' }, { id: 'members', label: 'Members' },
+      { id: 'student-registrations', label: 'Student registrations' },
       { id: 'subscription', label: 'Subscription' }, { id: 'audit', label: 'Audit log' },
     ] } : {}),
   } as Record<string, { id: string; label: string }[]>;
