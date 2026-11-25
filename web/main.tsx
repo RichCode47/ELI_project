@@ -1,7 +1,7 @@
 import { Component, StrictMode, useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Bell, ChevronDown, ChevronRight, LogOut, Menu, Moon, Search, Sun, X } from 'lucide-react';
+import { Bell, ChevronDown, ChevronRight, GraduationCap, LogOut, Menu, Moon, Search, Sun, X } from 'lucide-react';
 import { modules, formatState, roleNames } from '../shared/catalog.js';
 import { ApiError, api, useLoad } from './api.js';
 import type { Profile } from './api.js';
@@ -10,8 +10,12 @@ import { Auth } from './auth.js';
 import { Dashboard } from './dashboard.js';
 import { iconFor, tenantNav } from './navigation.js';
 import { Records } from './records.js';
+import { StudentPortal } from './student-portal.js';
 import { Brand, Dialog, ErrorMessage, Loading, getError } from './ui.js';
 import './style.css';
+
+const studentPortalRoute = /^\/student\/?$/.test(location.pathname);
+if (studentPortalRoute) document.title = 'Student portal · ELI EdTech';
 
 class Boundary extends Component<{ children: ReactNode }, { error?: Error }> {
   state: { error?: Error } = {};
@@ -39,6 +43,7 @@ function Workspace({ profile, route, refresh }: { profile: Profile; route: strin
   const [q, setQ] = useState('');
   const [error, setError] = useState<Error>();
   const [closedGroups, setClosedGroups] = useState<string[]>([]);
+  const student = !profile.platform && profile.role === 'STUDENT';
   const nav = profile.platform ? { Platform: [{ id: 'institutions', label: 'Institutions' }] } : tenantNav(profile);
   const pages = Object.values(nav).flat();
   const [section, selected] = route.split('/');
@@ -65,7 +70,7 @@ function Workspace({ profile, route, refresh }: { profile: Profile; route: strin
   }
   let content: ReactNode;
   if (profile.platform) content = <Platform/>;
-  else if (page === 'overview') content = <Dashboard tenant={profile} open={open}/>;
+  else if (page === 'overview') content = student ? <StudentPortal tenant={profile}/> : <Dashboard tenant={profile} open={open}/>;
   else if (page === 'settings') content = <Settings tenant={profile} refresh={refresh}/>;
   else if (page === 'members') content = <Members tenant={profile}/>;
   else if (page === 'subscription') content = <SubscriptionPage tenant={profile} value={profile.subscription}/>;
@@ -81,21 +86,22 @@ function Workspace({ profile, route, refresh }: { profile: Profile; route: strin
       </button><button className="icon-button sidebar-close" aria-label="Close navigation" onClick={() => setDrawer(false)}><X size={20}/></button></div>
       {!profile.platform && <div className="workspace-card">
         <div className="workspace-avatar" aria-hidden="true">{profile.institution.name.slice(0, 1).toUpperCase()}</div>
-        <div><strong>{profile.institution.name}</strong><span>{profile.institution.type} workspace</span></div>
+        <div><strong>{profile.institution.name}</strong><span>{student ? 'Student portal' : profile.institution.type + ' workspace'}</span></div>
       </div>}
       <nav aria-label="Main navigation" className="navigation">{Object.entries(nav).map(([group, links]) => {
         const expanded = !closedGroups.includes(group);
         return <div className="nav-group" key={group}><button className="nav-label" aria-expanded={expanded} onClick={() => toggleGroup(group, expanded)}>{group}<ChevronDown size={13}/></button>
           {expanded && links.map((link) => { const Icon = iconFor(link.id); return <a key={link.id} href={'#' + link.id} aria-current={page === link.id ? 'page' : undefined}
             className={'nav-link' + (page === link.id ? ' selected' : '')} onClick={() => setDrawer(false)}><Icon size={17}/><span>{link.label}</span></a>; })}
+          {expanded && group === 'Workspace' && !profile.platform && !student && <a className="nav-link" href="/student"><GraduationCap size={17}/><span>Student portal</span></a>}
         </div>;
       })}</nav>
-      <div className="sidebar-footer"><span className="online-dot"/>{profile.platform ? 'Platform administration' : formatState(profile.subscription.plan) + ' plan'}</div>
+      <div className="sidebar-footer"><span className="online-dot"/>{profile.platform ? 'Platform administration' : student ? 'Student account' : formatState(profile.subscription.plan) + ' plan'}</div>
     </aside>
     <div className="main-shell">
       <header className="topbar">
         <div className="topbar-left"><button className="icon-button drawer-button" aria-expanded={drawer} aria-label="Open navigation" onClick={() => setDrawer(true)}><Menu size={21}/></button>
-          <div className="breadcrumbs"><span>{profile.platform ? 'Platform' : 'Workspace'}</span><ChevronRight size={14}/><strong>{label}</strong></div></div>
+          <div className="breadcrumbs"><span>{profile.platform ? 'Platform' : student ? 'Student portal' : 'Workspace'}</span><ChevronRight size={14}/><strong>{label}</strong></div></div>
         <div className="topbar-actions">
           <button className="search-trigger" onClick={() => { setQ(''); setSearch(true); }} aria-label="Search navigation"><Search size={17}/><span>Find a module</span></button>
           <button className="icon-button" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>{theme === 'dark' ? <Sun size={18}/> : <Moon size={18}/>}</button>
@@ -121,15 +127,23 @@ function Workspace({ profile, route, refresh }: { profile: Profile; route: strin
 
 function App() {
   const hash = useHash();
+  const studentPortal = studentPortalRoute;
   const [revision, setRevision] = useState(0);
   const [profile, setProfile] = useState<Profile>();
   const { data, error } = useLoad<Profile>('/auth/me', revision);
   const refresh = () => setRevision((value) => value + 1);
   useEffect(() => { if (data) setProfile(data); else if (error instanceof ApiError && [401, 404].includes(error.status)) setProfile(undefined); }, [data, error]);
+  useEffect(() => {
+    if (data && !data.platform && data.role === 'STUDENT' && !studentPortal && !hash.startsWith('invite=')) {
+      location.replace('/student' + (hash ? '#' + hash : ''));
+    }
+  }, [data, hash, studentPortal]);
   if (hash.startsWith('invite=')) return <Auth invite={hash.slice(7)} onSuccess={refresh}/>;
   const signedOut = error instanceof ApiError && [401, 404].includes(error.status);
-  if (signedOut) return <Auth invite={null} onSuccess={refresh}/>;
-  if (data ?? profile) return <Workspace profile={(data ?? profile)!} route={hash} refresh={refresh}/>;
+  const current = data ?? profile;
+  const isStudent = !!current && !current.platform && current.role === 'STUDENT';
+  if (signedOut || (studentPortal && current && !isStudent)) return <Auth invite={null} onSuccess={refresh} studentPortal={studentPortal}/>;
+  if (current && (!isStudent || studentPortal)) return <Workspace profile={current} route={hash} refresh={refresh}/>;
   return <main className="app-loading"><Brand/>{error ? <ErrorMessage error={error} retry={refresh}/> : <Loading/>}</main>;
 }
 createRoot(document.getElementById('root')!).render(<StrictMode><Boundary><App/></Boundary></StrictMode>);

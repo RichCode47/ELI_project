@@ -20,9 +20,9 @@ export function tenantNav(profile: Tenant) {
   const enabled = Object.entries(modules).filter(([, module]) => profile.operational
     && module.readers.includes(profile.role) && includedInPlan(module, profile.subscription.plan));
   return {
-    Workspace: [{ id: 'overview', label: 'Overview' }],
+    Workspace: [{ id: 'overview', label: profile.role === 'STUDENT' ? 'Portal home' : 'Overview' }],
     ...Object.fromEntries([...new Set(enabled.map(([, module]) => module.group))].map((group) => [
-      group, enabled.filter(([, module]) => module.group === group).map(([id, module]) => ({ id, label: module.label })),
+      group, enabled.filter(([, module]) => module.group === group).map(([id, module]) => ({ id, label: profile.role === 'STUDENT' && id === 'students' ? 'My profile' : module.label })),
     ])),
     ...(profile.role === 'ADMIN' ? { Settings: [
       { id: 'settings', label: 'Institution settings' }, { id: 'members', label: 'Members' },

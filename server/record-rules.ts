@@ -18,7 +18,7 @@ export const bodySchema = z.object({
 export const changeSchema = bodySchema.extend({ version: z.int().min(1) });
 type RecordBody = z.infer<typeof bodySchema>;
 type Related = Record<string, Entry>;
-export const contents = (record: Entry) => record.data as Record<string, string | number | object>;
+export const contents = (record: Pick<Entry, 'data'>) => record.data as Record<string, string | number | object>;
 export const relatedTo = (purpose: string, targetId: string): Prisma.RecordWhereInput =>
   ({ links: { some: { purpose, targetId } } });
 

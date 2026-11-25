@@ -140,6 +140,12 @@ test('PostgreSQL, API, role/record isolation and transactional workflows', { ski
     await get(rec(tenantA, 'grades', draft.id), guardianAccount);
     const report = await create('report-cards', payload('Term results', 'PUBLISHED', {}, { student: studentA, class: classId, term }));
     assert.deepEqual((await get(path(tenantA) + '/report-cards/' + report + '/results', studentAccount)).json.grades, [{ assessment: 'Term exam', marks: '88' }]);
+    const portal = (await get(path(tenantA) + '/student-portal', studentAccount)).json;
+    assert.deepEqual(portal.profile, { id: studentA, number: 'A001' });
+    assert.deepEqual(portal.grades, [{ id: draft.id, marks: '88', title: 'Term exam mark' }]);
+    for (const cookie of [adminA, teacherAccount, guardianAccount]) await get(path(tenantA) + '/student-portal', cookie, 403);
+    await get(path(tenantB) + '/student-portal', studentAccount, 404);
+    await post(prefix + '/auth/login', '', { slug: aSlug, email: aSlug + '@example.test', password: sample, portal: 'student' }, 401);
   });
   await t.test('student numbers support automatic assignment and existing school identifiers', async () => {
     const students = rec(tenantA, 'students');

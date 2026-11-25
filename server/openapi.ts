@@ -62,7 +62,7 @@ export function openapi(config: Config) {
       '/v1/auth/register': { post: operation('Register an institution and start a trial', { write: true, public: true, status: 201,
         body: object({ institution: str, slug: str, type: text(institutionTypes), name: str, ...credentials }) }) },
       '/v1/auth/login': { post: operation('Create a workspace or platform session', { write: true, public: true, status: 204,
-        body: object({ slug: str, ...credentials }) }) },
+        body: object({ slug: str, ...credentials, portal: { const: 'student' } }, ['slug', 'email', 'password']) }) },
       '/v1/auth/accept-invite': { post: operation('Accept a single-use membership invitation', { write: true, public: true, status: 204,
         body: object({ tenantId: id, token: str, name: str, password: credentials.password }) }) },
       '/v1/auth/logout': { post: operation('Revoke the session', { write: true, status: 204, public: true }) },
@@ -79,6 +79,7 @@ export function openapi(config: Config) {
         write: true, parameters: [institution], response: str, mediaType: 'text/csv',
         body: object({ kind: text(Object.keys(modules)), q: str, status: str }, ['kind']),
       }) },
+      [scope + '/student-portal']: { get: operation('Get the signed-in student’s timetable, published grades, attendance and announcements', { parameters: [institution] }) },
       [scope + '/dashboard']: { get: operation('Get role-filtered metrics, attendance and activity', { parameters: [institution] }) },
       [records]: {
         get: operation('Search or list visible records', { parameters: [institution, kind, query, page, parameter('status', str, 'query')],

@@ -13,7 +13,7 @@ import {
 import type { Config } from './security.js';
 
 const signup = z.object({ institution: name, slug, type: z.enum(institutionTypes), name, email, password }).strict();
-const signIn = z.object({ slug: z.union([slug, z.literal('')]), email, password: z.string().min(1).max(128) }).strict();
+const signIn = z.object({ slug: z.union([slug, z.literal('')]), email, password: z.string().min(1).max(128), portal: z.literal('student').optional() }).strict();
 const accept = z.object({ tenantId: uuid, token: secureToken, name, password }).strict();
 const appearance = z.object({
   name, currency: z.enum(currencies), whiteLabel: z.boolean().default(false),
@@ -85,11 +85,12 @@ export function identityRoutes(db: PrismaClient, config: Config) {
     let tenantId = null;
     if (body.slug) {
       const member = await db.membership.findFirst({
-        where: { userId: user.id, active: true, tenant: { slug: body.slug } }, select: { tenantId: true },
+        where: { userId: user.id, active: true, tenant: { slug: body.slug }, ...(body.portal ? { role: 'STUDENT' } : {}) },
+        select: { tenantId: true },
       });
       if (!member) throw badLogin();
       tenantId = member.tenantId;
-    } else if (!user.platformAdmin) throw badLogin();
+    } else if (body.portal || !user.platformAdmin) throw badLogin();
     writeSession(res, config, await openSession(user.id, tenantId, requestToken(req, config)));
     res.sendStatus(204);
   });

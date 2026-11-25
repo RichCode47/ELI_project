@@ -5,16 +5,16 @@ import { institutionTypes } from '../shared/catalog.js';
 import { api } from './api.js';
 import { Brand, ErrorMessage, Field, getError } from './ui.js';
 
-export function Auth({ onSuccess, invite }: { onSuccess: () => void; invite: string | null }) {
+export function Auth({ onSuccess, invite, studentPortal = false }: { onSuccess: () => void; invite: string | null; studentPortal?: boolean }) {
   const [mode, setMode] = useState<'login' | 'register' | 'platform'>(location.hash === '#platform-login' ? 'platform' : 'login');
   const [institution, setInstitution] = useState('');
   const [slug, setSlug] = useState('');
   const [slugEdited, setSlugEdited] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<Error>();
-  const register = !invite && mode === 'register';
-  const platform = !invite && mode === 'platform';
-  const title = invite ? 'Accept your invitation' : register ? 'Create your workspace' : platform ? 'Platform administration' : 'Welcome back';
+  const register = !invite && !studentPortal && mode === 'register';
+  const platform = !invite && !studentPortal && mode === 'platform';
+  const title = invite ? 'Accept your invitation' : register ? 'Create your workspace' : platform ? 'Platform administration' : studentPortal ? 'Student portal sign-in' : 'Welcome back';
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (busy) return;
@@ -24,7 +24,7 @@ export function Auth({ onSuccess, invite }: { onSuccess: () => void; invite: str
     try {
       const [tenantId, token] = invite?.split('.') ?? [];
       if (invite) await api('/auth/accept-invite', { method: 'POST', body: { ...fields, tenantId, token } });
-      else await api(register ? '/auth/register' : '/auth/login', { method: 'POST', body: { ...fields, slug: platform ? '' : slug } });
+      else await api(register ? '/auth/register' : '/auth/login', { method: 'POST', body: { ...fields, slug: platform ? '' : slug, ...(studentPortal ? { portal: 'student' } : {}) } });
       location.hash = '#overview';
       onSuccess();
     } catch (failure) { setError(getError(failure)); }
@@ -45,7 +45,7 @@ export function Auth({ onSuccess, invite }: { onSuccess: () => void; invite: str
       <div className="auth-content">
         <h1>{title}</h1>
         <p>{invite ? 'Enter your name and password to join your institution.' : register ? 'Start a 14-day Professional trial for your school, college or university.' :
-          platform ? 'Sign in with your authorised platform account.' : 'Sign in to your institution’s ELI EdTech workspace.'}</p>
+          platform ? 'Sign in with your authorised platform account.' : studentPortal ? 'Use the workspace ID and student account provided by your school.' : 'Sign in to your institution’s ELI EdTech workspace.'}</p>
         <form className="stack" onSubmit={submit} key={title}>
           {error && <ErrorMessage error={error}/>}
           {register && <>
@@ -59,8 +59,9 @@ export function Auth({ onSuccess, invite }: { onSuccess: () => void; invite: str
           <button className="button primary auth-submit" disabled={busy}>{busy ? 'Please wait…' : register ? 'Create workspace' : invite ? 'Join workspace' : 'Sign in'}<ArrowRight size={17}/></button>
         </form>
         {!invite && <div className="auth-links">
-          {register || platform ? <button className="text-button" onClick={() => change('login')}>Back to workspace sign-in</button> :
+          {studentPortal ? <a className="text-button" href="/">Back to workspace</a> : register || platform ? <button className="text-button" onClick={() => change('login')}>Back to workspace sign-in</button> :
             <><span>New institution? <button className="text-button" onClick={() => change('register')}>Create a workspace</button></span>
+              <a className="text-button" href="/student">Student portal</a>
               <button className="muted-link" onClick={() => change('platform')}>Platform sign-in</button></>}
         </div>}
       </div>
@@ -69,10 +70,10 @@ export function Auth({ onSuccess, invite }: { onSuccess: () => void; invite: str
     <aside className="auth-art" aria-label="About ELI EdTech">
       <div className="art-grid" aria-hidden="true"/>
       <div className="art-icons" aria-hidden="true"><span><Building2/></span><span><GraduationCap/></span><span><BookOpen/></span></div>
-      <div className="art-copy"><span className="art-label"><ShieldCheck size={16}/> Institution workspace</span>
-        <h2>One workspace for your institution.</h2>
-        <p>Manage people, academics, finance and learning from a single place.</p>
-        <ul><li><Check size={16}/> Separate workspaces for every institution</li><li><Check size={16}/> Access tailored to each role</li></ul>
+      <div className="art-copy"><span className="art-label"><ShieldCheck size={16}/> {studentPortal ? 'Student portal' : 'Institution workspace'}</span>
+        <h2>{studentPortal ? 'Your school day in one place.' : 'One workspace for your institution.'}</h2>
+        <p>{studentPortal ? 'Find your timetable, courses, grades and school announcements.' : 'Manage people, academics, finance and learning from a single place.'}</p>
+        {!studentPortal && <ul><li><Check size={16}/> Separate workspaces for every institution</li><li><Check size={16}/> Access tailored to each role</li></ul>}
       </div>
     </aside>
   </main>;

@@ -207,7 +207,8 @@ export function Records({ tenant, kind, selected, create, navigate }: { tenant: 
     finally { setExporting(false); }
   }
   return <div>
-    <header className="page-title"><div><h1>{module.label}</h1><p>{module.description}</p></div>
+    <header className="page-title"><div><h1>{tenant.role === 'STUDENT' && kind === 'students' ? 'My profile' : module.label}</h1>
+      <p>{tenant.role === 'STUDENT' && kind === 'students' ? 'View your student details and number.' : module.description}</p></div>
       <div className="page-actions">{reportingRoles.includes(tenant.role) && <button className="button outline" disabled={exporting || !data?.total} onClick={() => void exportCsv()}><Download size={17}/>{exporting ? 'Exporting…' : 'Export CSV'}</button>}
         {writable && <button className="button primary" onClick={() => navigate(kind, undefined, true)}><Plus size={17}/> Add {module.singular}</button>}</div></header>
     {exportError && <ErrorMessage error={exportError}/>}

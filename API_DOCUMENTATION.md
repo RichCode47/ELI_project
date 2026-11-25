@@ -4,7 +4,7 @@ The REST API is served under `/api/v1`. Fetch `/api/v1/openapi.json` for the liv
 
 ## Sessions and tenancy
 
-Call `POST /auth/register` or `POST /auth/login` to receive the session cookie. The login body is `{ "slug": "workspace-id", "email": "user@example.test", "password": "…" }`. Authorised platform administrators use an empty slug for their separate platform session. `GET /auth/me` returns the selected institution and role. Use that institution’s UUID in scoped routes.
+Call `POST /auth/register` or `POST /auth/login` to receive the session cookie. The login body is `{ "slug": "workspace-id", "email": "user@example.test", "password": "…" }`. Authorised platform administrators use an empty slug for their separate platform session. `GET /auth/me` returns the selected institution and role. Use that institution’s UUID in scoped routes. To require a Student membership at sign-in, include `"portal": "student"` with the workspace slug.
 
 For writes, send `Origin` equal to `APP_ORIGIN` and `X-ELI-Request: 1`. Send JSON bodies with `Content-Type: application/json`. The browser supplies the origin and handles the cookie on normal same-origin requests. Sign out with `POST /auth/logout`.
 
@@ -23,6 +23,7 @@ Paths below are relative to `/api/v1`. Replace `{tenantId}` with the UUID return
 | `GET /institutions/{tenantId}/members` | List or search members. Use `?module=...` for assignable member choices |
 | `PATCH /institutions/{tenantId}/members/{id}` | Enable or disable an eligible membership |
 | `POST /institutions/{tenantId}/invitations` | Create or replace a role invitation |
+| `GET /institutions/{tenantId}/student-portal` | Student-only summary with profile number, timetable, published grades, attendance and announcements |
 | `GET /institutions/{tenantId}/dashboard` | Role-scoped counts, weekly attendance and activity |
 | `POST /institutions/{tenantId}/reports/export` | Download up to 5,000 visible records as CSV, with optional `q` and `status` filters |
 | `GET /institutions/{tenantId}/audit` | Most recent institution audit events |

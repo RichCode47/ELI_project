@@ -178,6 +178,23 @@ textarea { resize: vertical; }
 .chart-foot { display: flex; gap: 4px; justify-content: space-between; border-top: 1px solid var(--line); padding: 9px 0 0; margin: 10px 16px 0; }
 .chart-foot span:first-child { display: flex; align-items: center; gap: 6px; }
 .chart-foot i { width: 8px; height: 8px; border-radius: 2px; background: #8c84ed; }
+.student-welcome { min-height: 155px; }
+.student-identity { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 19px; margin-top: 11px; }
+.student-identity > span { color: var(--hero-muted); }
+.student-identity strong { color: var(--hero-ink); margin-left: 4px; }
+.student-identity a, .portal-view { display: inline-flex; align-items: center; gap: 4px; }
+.portal-shortcut { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 12px; }
+.portal-shortcut:hover { border-color: var(--primary); }
+.portal-shortcut strong, .portal-shortcut small, .portal-row strong, .portal-row small { display: block; overflow-wrap: anywhere; }
+.portal-shortcut > svg, .portal-row > svg { color: var(--muted); }
+.portal-view { white-space: nowrap; font-size: 12px; }
+.portal-items { display: grid; list-style: none; margin: 0; padding: 0 12px 12px; }
+.portal-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 9px; border-radius: 8px; padding: 8px 6px; }
+.portal-row:hover { background: var(--subtle); }
+@media (max-width: 590px) {
+  .portal-shortcut { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .portal-shortcut > svg { display: none; }
+}
 .quick-items { padding: 0 14px 12px; }
 .quick-item, .notice { display: flex; align-items: center; text-align: left; gap: 10px; padding: 8px 7px; width: 100%; border-radius: 8px; }
 .quick-item:hover, .notice:hover, .activity-row:hover { background: var(--subtle); }

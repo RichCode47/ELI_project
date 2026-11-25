@@ -2,6 +2,7 @@ import { Router } from 'express';
 import type { Request } from 'express';
 import { z } from 'zod';
 import { modules, reportingRoles } from '../shared/catalog.js';
+import type { StudentPortalData } from '../shared/student-portal.js';
 import type { Prisma, PrismaClient } from '../generated/prisma/client.js';
 import { requireModule, session, tenantAccess, visibility } from './access.js';
 import type { TenantAccess } from './access.js';
@@ -33,6 +34,10 @@ function present(entry: WithLinks, context: TenantAccess) {
     links: Object.fromEntries(entry.links.map(({ purpose, target }) => [purpose, target])),
     statuses: statesFor(entry.kind, modules[entry.kind], entry.status),
   };
+}
+
+function localDate(date: Date, timeZone: string) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
 }
 
 function scoped(context: TenantAccess, kind: string): Prisma.RecordWhereInput {
@@ -215,6 +220,46 @@ export function recordRoutes(db: PrismaClient, config: Config) {
     res.attachment(kind + '.csv').type('text/csv; charset=utf-8').send(output);
   });
 
+  router.get('/institutions/:tenantId/student-portal', async (req, res) => {
+    const result = await run(req, async (tx, context): Promise<StudentPortalData> => {
+      if (context.member.role !== 'STUDENT') deny();
+      requireModule(context, modules.students, 'read');
+      const item = { id: true, title: true } as const;
+      const orderBy = [{ updatedAt: 'desc' }, { id: 'desc' }] as const;
+      const student = await tx.record.findFirst({ where: scoped(context, 'students'), select: { id: true, data: true } });
+      const announcements = await tx.record.findMany({
+        where: scoped(context, 'announcements'), select: item, orderBy: [...orderBy], take: 3,
+      });
+      if (!student) return { profile: null, timetable: [], grades: [], attendance: [], announcements };
+
+      const today = localDate(new Date(), context.tenant.timeZone);
+      const nextWeek = new Date(Date.parse(today + 'T00:00:00Z') + 7 * 86400000).toISOString().slice(0, 10);
+      const slots = await tx.record.findMany({
+        where: { ...scoped(context, 'timetable'), data: { path: ['date'], gte: today, lt: nextWeek } },
+        select: { ...item, data: true }, orderBy: { id: 'asc' },
+      });
+      const timetable = slots.map(({ data, ...slot }) => {
+        const { date, startsAt, endsAt, room } = contents({ data });
+        return { ...slot, date: String(date), startsAt: String(startsAt), endsAt: String(endsAt),
+          room: typeof room === 'string' ? room : undefined };
+      }).sort((a, b) => a.date.localeCompare(b.date) || a.startsAt.localeCompare(b.startsAt));
+      const grades = await tx.record.findMany({
+        where: scoped(context, 'grades'), select: { ...item, data: true }, orderBy: [...orderBy], take: 3,
+      });
+      const attendance = await tx.record.findMany({
+        where: scoped(context, 'attendance'), select: { ...item, status: true, data: true }, orderBy: [...orderBy], take: 3,
+      });
+      return {
+        profile: { id: student.id, number: String(contents(student).number) },
+        timetable: timetable.slice(0, 4),
+        grades: grades.map(({ data, ...grade }) => ({ ...grade, marks: String(contents({ data }).marks) })),
+        attendance: attendance.map(({ data, ...entry }) => ({ ...entry, date: String(contents({ data }).date) })),
+        announcements,
+      };
+    });
+    res.json(result);
+  });
+
   router.get('/institutions/:tenantId/dashboard', async (req, res) => {
     const result = await run(req, async (tx, context) => {
       const { member, operational, tenant, subscription } = context;
@@ -225,7 +270,7 @@ export function recordRoutes(db: PrismaClient, config: Config) {
       const metrics: Record<string, number> = {};
       for (const kind of allowed) metrics[kind] = await tx.record.count({ where: scoped(context, kind) });
       const now = new Date();
-      const today = new Intl.DateTimeFormat('en-CA', { timeZone: tenant.timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+      const today = localDate(now, tenant.timeZone);
       const utcMidnight = Date.parse(today + 'T00:00:00Z');
       const dates = Array.from({ length: 7 }, (_, index) => new Date(utcMidnight - (6 - index) * 86400000).toISOString().slice(0, 10));
       const attendance = [];
