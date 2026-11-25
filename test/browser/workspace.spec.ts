@@ -12,7 +12,9 @@ test('onboard, manage student records, switch theme and use mobile navigation', 
   await page.getByLabel('Full name').fill('Chanda Administrator');
   await page.getByLabel('Email address').fill('eli-' + suffix + '@example.test');
   await page.getByLabel('Password').fill('A long browser test passphrase');
-  await page.getByRole('button', { name: 'Create workspace', exact: true }).click();
+  const createWorkspace = page.getByRole('button', { name: 'Create workspace', exact: true });
+  await expect(createWorkspace).toHaveCSS('background-color', 'rgb(13, 110, 111)');
+  await createWorkspace.click();
   await expect(page.getByRole('heading', { name: 'Welcome back, Chanda.' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Attendance overview' })).toBeVisible();
   await page.getByRole('button', { name: 'Add student', exact: true }).click();
@@ -47,5 +49,7 @@ test('onboard, manage student records, switch theme and use mobile navigation', 
   await page.getByRole('button', { name: 'Account menu' }).click();
   await page.getByRole('button', { name: 'Sign out' }).click();
   await expect(page.getByRole('heading', { name: 'Welcome back', exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toHaveCSS('background-color', 'rgb(34, 184, 163)');
   expect(uncaught).toEqual([]);
 });

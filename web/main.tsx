@@ -15,6 +15,10 @@ import { StudentRegistrationForm, StudentRegistrations } from './student-registr
 import { Brand, Dialog, ErrorMessage, Loading, getError } from './ui.js';
 import './style.css';
 
+const savedTheme = localStorage.getItem('eli-theme');
+document.documentElement.dataset.theme = savedTheme === 'light' || savedTheme === 'dark'
+  ? savedTheme : matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
 const studentPortalRoute = /^\/student\/?$/.test(location.pathname);
 if (studentPortalRoute) document.title = 'Student portal · ELI EdTech';
 
@@ -37,7 +41,7 @@ function useHash() {
 }
 
 function Workspace({ profile, route, refresh }: { profile: Profile; route: string; refresh: () => void }) {
-  const [theme, setTheme] = useState(() => localStorage.getItem('eli-theme') ?? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+  const [theme, setTheme] = useState(() => document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light');
   const [menu, setMenu] = useState(false);
   const [drawer, setDrawer] = useState(false);
   const [search, setSearch] = useState(false);
